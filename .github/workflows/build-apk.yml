@@ -37,4 +37,4 @@ jobs:
         run: |
           cp android/app/build/outputs/apk/debug/app-debug.apk sanin-compass.apk
           TAG="build-${{ github.run_number }}"
-          gh release create "$TAG" sanin-compass.apk --title "山陰コンパス $TAG" --notes "スマホでこのページを開き、sanin-compass.apk をタップしてインストール" --latest
+          gh release create "$TAG" sanin-compass.apk --title "山陰コンパス $TAG" --notes "スマホの方位センサーで使えるコンパスアプリ。H3ロケット10号機（2026年10月20日 4:41 打上げ予定）の打ち上げの軌跡を、カメラ映像に重ねて見ることができます。インストールは、スマホでこのページを開き sanin-compass.apk をタップしてください。" --latest
