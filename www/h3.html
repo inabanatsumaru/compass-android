@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>H3 10号機 AR</title>
+<meta name="theme-color" content="#05080A">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: camera full-bleed, overlay canvas on top, countdown bar top, control sheet bottom. Night-sky single theme. */
+:root{
+  --night:#05080A; --glass:rgba(8,14,18,.72); --ink:#EAF1F2; --muted:#9FB0B3; --line:rgba(234,241,242,.18);
+  --path:#FFB547; --flown:#FFFFFF; --now:#FF5A47; --ok:#7BD88F;
+  --f-body:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  color-scheme:dark;
+}
+html,body{height:100%;margin:0;background:var(--night);color:var(--ink);font-family:var(--f-body);overflow:hidden}
+video,canvas{position:fixed;inset:0;width:100%;height:100%}
+video{object-fit:cover;background:var(--night)}
+.top{position:fixed;left:0;right:0;top:0;padding:calc(env(safe-area-inset-top,0px) + 10px) max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));
+  background:linear-gradient(var(--glass),transparent);display:flex;align-items:center;justify-content:space-between;gap:12px}
+.top a{color:var(--ink);text-decoration:none;font-size:14px;padding:6px 10px;border:1px solid var(--line);border-radius:8px}
+.clock{text-align:right}
+.clock .t{font-family:var(--f-mono);font-weight:600;font-size:26px;font-variant-numeric:tabular-nums;line-height:1.1}
+.clock .s{font-size:12px;color:var(--muted)}
+.sheet{position:fixed;left:0;right:0;bottom:0;background:var(--glass);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  padding:12px max(16px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 12px) max(16px,env(safe-area-inset-left,0px));
+  display:flex;flex-direction:column;gap:10px;max-height:60%;overflow-y:auto;border-top:1px solid var(--line)}
+.pred{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13px}
+.pred dt{color:var(--muted)} .pred dd{margin:0;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.status{font-size:12px;color:var(--muted);min-height:1.2em}
+.status b{color:var(--ok)}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+button{font:700 14px var(--f-body);padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.08);color:var(--ink);cursor:pointer}
+button.primary{background:var(--path);color:#1A1205;border-color:transparent}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--path);outline-offset:2px}
+details{border-top:1px solid var(--line);padding-top:8px}
+summary{font-size:13px;color:var(--muted);cursor:pointer}
+.cal{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.cal label{display:grid;grid-template-columns:7.5em 1fr 4.2em;align-items:center;gap:8px;font-size:13px}
+.cal output{font-family:var(--f-mono);text-align:right;font-variant-numeric:tabular-nums}
+.cal input[type=range]{width:100%;accent-color:var(--path)}
+.note{font-size:11px;color:var(--muted);line-height:1.6;margin:0}
+</style>
+</head>
+<body>
+<video id="cam" playsinline muted autoplay></video>
+<canvas id="ov"></canvas>
+
+<div class="top">
+  <div style="display:flex;gap:8px"><a href="index.html">← コンパス</a><button id="hide" type="button" style="padding:6px 10px;font-size:14px;font-weight:400">パネルを隠す</button></div>
+  <div class="clock"><div class="t" id="tclock">T−</div><div class="s" id="tsub">H3ロケット10号機（MMX）</div></div>
+</div>
+
+<div class="sheet" id="sheet">
+  <dl class="pred" id="pred"></dl>
+  <div class="status" id="status">「カメラを起動」を押すと、空に予定軌跡を重ねます</div>
+  <div class="btns">
+    <button class="primary" id="go" type="button">カメラを起動</button>
+    <button id="demo" type="button">デモ再生（10倍速）</button>
+    <button id="relocate" type="button">現在地を再取得</button>
+  </div>
+  <details>
+    <summary>表示の補正</summary>
+    <div class="cal">
+      <label for="azoff">方位のずれ<input id="azoff" type="range" min="-30" max="30" step="0.5" value="0"><output id="azoffv">0.0°</output></label>
+      <label for="eloff">高さのずれ<input id="eloff" type="range" min="-15" max="15" step="0.5" value="0"><output id="eloffv">0.0°</output></label>
+      <label for="fov">画角（長辺）<input id="fov" type="range" min="40" max="100" step="1" value="66"><output id="fovv">66°</output></label>
+      <label for="decl">偏角（西偏）<input id="decl" type="range" min="0" max="12" step="0.1" value="8.3"><output id="declv">8.3°</output></label>
+      <p class="note">地平線の「南」「東」の表示が実際の景色や月の位置と合うように「方位のずれ」を調整してください。軌跡は計画書の時刻・高度表から推定したもので、数度の誤差があります。</p>
+    </div>
+  </details>
+</div>
+
+<script src="h3traj.js"></script>
+<script>
+const H=window.H3, LAUNCH=Date.parse(H.LAUNCH_ISO);
+const $=id=>document.getElementById(id);
+const cv=$("ov"), ctx=cv.getContext("2d"), cam=$("cam");
+const DIRS=["北","北北東","北東","東北東","東","東南東","南東","南南東","南","南南西","南西","西南西","西","西北西","北西","北北西"];
+const dirName=a=>DIRS[Math.round(((a%360)+360)%360/22.5)%16];
+const fmt=s=>{const a=Math.abs(Math.round(s)),m=Math.floor(a/60),x=a%60;return (m>=60?Math.floor(m/60)+":"+String(m%60).padStart(2,"0"):m)+":"+String(x).padStart(2,"0")};
+
+// ---- settings (per-device convenience) ----
+const cfg={azoff:0,eloff:0,fov:66,decl:8.3};
+try{Object.assign(cfg,JSON.parse(localStorage.getItem("h3cfg")||"{}"))}catch(e){}
+for(const k of ["azoff","eloff","fov","decl"]){
+  const inp=$(k), out=$(k+"v"); inp.value=cfg[k];
+  const show=()=>{out.textContent=(+inp.value).toFixed(k==="fov"?0:1)+"°"}; show();
+  inp.addEventListener("input",()=>{cfg[k]=+inp.value;show();try{localStorage.setItem("h3cfg",JSON.stringify(cfg))}catch(e){}});
+}
+
+// ---- observer location ----
+let obs={lat:35.4282,lon:133.3312,src:"米子駅（仮の地点）"}, vis=null;
+function locate(){
+  if(!navigator.geolocation){updatePred();return}
+  $("status").textContent="現在地を取得しています…";
+  navigator.geolocation.getCurrentPosition(p=>{
+    obs={lat:p.coords.latitude,lon:p.coords.longitude,h:p.coords.altitude||0,src:`現在地（±${Math.round(p.coords.accuracy)}m）`};
+    $("status").innerHTML="<b>現在地を取得しました</b>"; updatePred();
+  },()=>{$("status").textContent="現在地を取得できないため、米子駅を基準に計算しています";updatePred();},
+  {enableHighAccuracy:true,timeout:15000,maximumAge:60000});
+}
+function updatePred(){
+  vis=H.visibility(obs);
+  const row=(k,v)=>`<dt>${k}</dt><dd>${v}</dd>`;
+  const p=x=>x?`T+${fmt(x.t)}　${dirName(x.az)} ${x.az.toFixed(0)}°　仰角 ${x.el.toFixed(1)}°`:"—";
+  $("pred").innerHTML=row("観測地点",`${obs.src}`)+
+    (vis.first? row("見え始め",p(vis.first))+row("いちばん高い",p(vis.peak))+row("見え終わり",p(vis.last))
+              : row("予測","この地点からは地平線の下で見えません"));
+}
+
+// ---- clock (real or demo) ----
+let demo=null;
+function tNow(){ return demo? demo.t0+(performance.now()-demo.start)/1000*demo.speed : (Date.now()-LAUNCH)/1000; }
+$("demo").addEventListener("click",()=>{
+  if(demo){demo=null;$("demo").textContent="デモ再生（10倍速）";return}
+  demo={t0:-10,start:performance.now(),speed:10}; $("demo").textContent="デモを止める";
+});
+
+// ---- orientation → rotation matrix (device → East/North/Up) ----
+let Rm=null, sensorKind="";
+function matFrom(a,b,g){
+  a*=Math.PI/180;b*=Math.PI/180;g*=Math.PI/180;
+  const cA=Math.cos(a),sA=Math.sin(a),cB=Math.cos(b),sB=Math.sin(b),cG=Math.cos(g),sG=Math.sin(g);
+  return [[cA*cG-sA*sB*sG,-cB*sA,cA*sG+cG*sA*sB],[cG*sA+cA*sB*sG,cA*cB,sA*sG-cA*cG*sB],[-cB*sG,sB,cB*cG]];
+}
+function feed(a,b,g){
+  const M=matFrom(a,b,g);
+  if(!Rm){Rm=M;return}
+  for(let i=0;i<3;i++)for(let j=0;j<3;j++)Rm[i][j]=Rm[i][j]*0.8+M[i][j]*0.2;
+}
+function onAbs(e){ if(e.alpha==null)return; sensorKind="abs"; feed(e.alpha,e.beta,e.gamma); }
+function onRel(e){
+  if(sensorKind==="abs"||e.beta==null)return;
+  if(e.webkitCompassHeading!=null){ sensorKind="ios"; feed((360-e.webkitCompassHeading)%360,e.beta,e.gamma); }
+}
+async function startSensors(){
+  try{ if(typeof DeviceOrientationEvent!=="undefined"&&typeof DeviceOrientationEvent.requestPermission==="function"){
+      if(await DeviceOrientationEvent.requestPermission()!=="granted")throw 0;} }catch(e){ $("status").textContent="方位センサーの使用が許可されませんでした"; return; }
+  if("ondeviceorientationabsolute" in window) window.addEventListener("deviceorientationabsolute",onAbs);
+  window.addEventListener("deviceorientation",onRel);
+}
+
+// ---- camera ----
+async function startCamera(){
+  try{
+    const s=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1080}}});
+    cam.srcObject=s; await cam.play().catch(()=>{});
+    return true;
+  }catch(e){ $("status").textContent="カメラを使えませんでした。重ね表示だけを出します"; return false; }
+}
+$("go").addEventListener("click",async()=>{
+  $("go").disabled=true;
+  await startSensors(); const ok=await startCamera();
+  try{ await navigator.wakeLock?.request("screen"); }catch(e){}
+  setTimeout(()=>{ if(!Rm) $("status").textContent="方位センサーの値が届きません。端末を8の字に振ってください";
+                   else if(ok) $("status").innerHTML="<b>表示中</b>　スマホを南の空に向けてください"; },1500);
+  $("go").textContent="起動済み";
+});
+$("relocate").addEventListener("click",locate);
+$("hide").addEventListener("click",()=>{const s=$("sheet");s.hidden=!s.hidden;$("hide").textContent=s.hidden?"パネルを出す":"パネルを隠す";});
+
+// ---- projection ----
+let W=0,Hh=0,dpr=1;
+function resize(){dpr=Math.min(devicePixelRatio||1,2);W=innerWidth;Hh=innerHeight;cv.width=W*dpr;cv.height=Hh*dpr;ctx.setTransform(dpr,0,0,dpr,0,0)}
+addEventListener("resize",resize); resize();
+function focal(){
+  const vw=cam.videoWidth||W, vh=cam.videoHeight||Hh;
+  const fNative=(Math.max(vw,vh)/2)/Math.tan(cfg.fov*Math.PI/360);
+  const scale=cam.videoWidth? Math.max(W/vw,Hh/vh) : Math.max(W,Hh)/Math.max(vw,vh);
+  return fNative*scale;
+}
+function project(azTrue,el,f){
+  const az=(azTrue+cfg.decl+cfg.azoff)*Math.PI/180, e=(el+cfg.eloff)*Math.PI/180;
+  const w=[Math.cos(e)*Math.sin(az),Math.cos(e)*Math.cos(az),Math.sin(e)];
+  const d=[0,1,2].map(i=>Rm[0][i]*w[0]+Rm[1][i]*w[1]+Rm[2][i]*w[2]);
+  const front=d[2]<-0.05;
+  return {front, x:W/2+f*d[0]/(-d[2]), y:Hh/2-f*d[1]/(-d[2]), dx:d[0], dy:-d[1]};
+}
+const onScreen=p=>p.front&&p.x>-40&&p.x<W+40&&p.y>-40&&p.y<Hh+40;
+
+function label(txt,x,y,color,align){
+  ctx.font="600 13px 'Zen Kaku Gothic New',system-ui,sans-serif"; ctx.textAlign=align||"left"; ctx.textBaseline="middle";
+  ctx.lineWidth=4; ctx.strokeStyle="rgba(0,0,0,.65)"; ctx.strokeText(txt,x,y); ctx.fillStyle=color; ctx.fillText(txt,x,y);
+}
+function edgeArrow(p,text){
+  let vx=p.dx, vy=p.dy; const n=Math.hypot(vx,vy)||1; vx/=n; vy/=n;
+  const m=48, top=90, bottom=Hh*0.42;
+  const kx=vx>0?(W-m-W/2)/vx:vx<0?(m-W/2)/vx:Infinity;
+  const ky=vy>0?(Hh-bottom-Hh/2)/vy:vy<0?(top-Hh/2)/vy:Infinity;
+  const k=Math.min(kx,ky), x=W/2+vx*k, y=Hh/2+vy*k, ang=Math.atan2(vy,vx);
+  ctx.save(); ctx.translate(x,y); ctx.rotate(ang); ctx.fillStyle=getCss("--now");
+  ctx.beginPath(); ctx.moveTo(18,0); ctx.lineTo(-10,-12); ctx.lineTo(-4,0); ctx.lineTo(-10,12); ctx.closePath(); ctx.fill(); ctx.restore();
+  label(text, x - vx*30, y - vy*30 + (vy<0?18:-18), getCss("--ink"), "center");
+}
+const cssCache={}; function getCss(n){return cssCache[n]||(cssCache[n]=getComputedStyle(document.documentElement).getPropertyValue(n).trim())}
+
+// ---- draw loop ----
+function draw(){
+  requestAnimationFrame(draw);
+  const t=tNow();
+  $("tclock").textContent=(t<0?"T−":"T+")+fmt(t);
+  const ev=t>=0? [...H.EVENTS].reverse().find(e=>t>=e.t) : null;
+  $("tsub").textContent= demo? "デモ再生中（10倍速）" : (t<0? "打上げ 10月20日 4:41:03" : (t<=H.END_T? (ev?ev.name+"　":"")+"高度 "+H.stateAt(t).alt.toFixed(0)+" km" : "第2段燃焼停止後（表示終了）"));
+  ctx.clearRect(0,0,W,Hh);
+  if(!Rm){ return; }
+  const f=focal();
+
+  // horizon and 10° altitude line
+  for(const [el,alpha] of [[0,.55],[10,.18]]){
+    ctx.beginPath(); let pen=false;
+    for(let a=0;a<=360;a+=2){const p=project(a,el,f); if(p.front){pen?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y);pen=true}else pen=false;}
+    ctx.strokeStyle=`rgba(234,241,242,${alpha})`; ctx.lineWidth=1; ctx.setLineDash(el?[4,6]:[]); ctx.stroke(); ctx.setLineDash([]);
+  }
+  for(let a=0;a<360;a+=45){const p=project(a,0,f); if(onScreen(p)) label(DIRS[a/22.5]+" "+a+"°",p.x,p.y+14,getCss("--muted"),"center");}
+  { const p=project(180,10,f); if(onScreen(p)) label("仰角10°",Math.min(Math.max(p.x,40),W-40),p.y-10,getCss("--muted"),"center"); }
+
+  // trajectory: flown part white, future amber, below horizon faint dashed
+  let prev=null;
+  for(let s=0;s<=H.END_T;s+=2){
+    const a=H.lookAngles(obs,s), p=project(a.az,a.el,f);
+    if(prev&&prev.p.front&&p.front){
+      ctx.beginPath(); ctx.moveTo(prev.p.x,prev.p.y); ctx.lineTo(p.x,p.y);
+      const below=a.el<0, flown=s<=t;
+      ctx.strokeStyle= below? "rgba(255,181,71,.35)" : flown? getCss("--flown") : getCss("--path");
+      ctx.lineWidth= below?1.5:3; ctx.setLineDash(below?[3,5]:[]); ctx.stroke(); ctx.setLineDash([]);
+    }
+    prev={p};
+  }
+  // time ticks every minute + events
+  for(let s=60;s<=600;s+=60){const a=H.lookAngles(obs,s); if(a.el<-1)continue; const p=project(a.az,a.el,f);
+    if(onScreen(p)){ctx.fillStyle=getCss("--path");ctx.beginPath();ctx.arc(p.x,p.y,3,0,7);ctx.fill();label("T+"+fmt(s),p.x+8,p.y+12,getCss("--muted"));}}
+  for(const e of H.EVENTS){ if(e.t===118||e.t===299)continue; const a=H.lookAngles(obs,e.t); if(a.el<-1)continue;
+    const p=project(a.az,a.el,f); if(onScreen(p)){ctx.strokeStyle=getCss("--ink");ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(p.x,p.y,6,0,7);ctx.stroke();label(e.name,p.x+10,p.y-12,getCss("--ink"));}}
+
+  // current / expected position
+  let target=null, text="";
+  if(t>=0&&t<=H.END_T){ const a=H.lookAngles(obs,t); target={a}; text=a.el>0?`ロケット　仰角${a.el.toFixed(1)}°`:"ロケット（地平線の下）"; }
+  else if(t<0&&vis&&vis.first){ target={a:vis.first}; text=`ここに現れる予定（T+${fmt(vis.first.t)}）`; }
+  if(target){
+    const p=project(target.a.az,target.a.el,f);
+    if(onScreen(p)){
+      const pulse=6+3*Math.sin(performance.now()/180);
+      ctx.fillStyle=getCss("--now"); ctx.beginPath(); ctx.arc(p.x,p.y,t>=0?pulse:5,0,7); ctx.fill();
+      ctx.strokeStyle=getCss("--now"); ctx.lineWidth=2; ctx.beginPath(); ctx.arc(p.x,p.y,18,0,7); ctx.stroke();
+      label(text,p.x+24,p.y,getCss("--ink"));
+    } else edgeArrow(p,text);
+  }
+}
+locate(); updatePred(); requestAnimationFrame(draw);
+</script>
+</body>
+</html>
