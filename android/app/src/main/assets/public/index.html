@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>山陰コンパス</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icon-180.png">
+<link rel="icon" href="./icon-192.png">
+<meta name="theme-color" content="#E9EEEC" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111819" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="コンパス">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;800&family=Zen+Kaku+Gothic+New:wght@400;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: one screen, dial centered, readout above, controls below */
+:root{
+  --bg:#E9EEEC; --face:#F7F9F8; --ink:#1B2A2E; --muted:#5E6F72; --line:#C6D0CE;
+  --brass:#A8732A; --north:#C2362B;
+  --f-display:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif;
+  --f-body:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#111819; --face:#192224; --ink:#E4EBE9; --muted:#8FA09F; --line:#2E3B3D;
+  --brass:#D4A256; --north:#E8574A; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111819; --face:#192224; --ink:#E4EBE9; --muted:#8FA09F; --line:#2E3B3D;
+  --brass:#D4A256; --north:#E8574A; color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:16px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;gap:16px}
+.readout{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;justify-content:center}
+.dir{font-family:var(--f-display);font-weight:800;font-size:clamp(40px,12vw,64px);line-height:1}
+.deg{font-family:var(--f-mono);font-size:clamp(26px,7vw,36px);font-variant-numeric:tabular-nums;color:var(--brass)}
+.mode{font-size:12px;letter-spacing:.08em;color:var(--muted);text-align:center;min-height:1.4em}
+.mode b{color:var(--north);font-weight:700}
+.dialwrap{width:min(88vw,420px);aspect-ratio:1;max-width:100%;position:relative;touch-action:none;cursor:grab}
+svg{width:100%;height:100%;display:block}
+.lubber{position:absolute;left:50%;top:-4px;transform:translateX(-50%);width:0;height:0;
+  border-left:9px solid transparent;border-right:9px solid transparent;border-top:16px solid var(--brass)}
+.controls{display:flex;flex-direction:column;gap:12px;width:min(100%,420px)}
+button{font:700 15px var(--f-body);padding:12px 16px;border-radius:10px;border:0;background:var(--ink);color:var(--bg);cursor:pointer}
+button:focus-visible,input:focus-visible{outline:3px solid var(--brass);outline-offset:2px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:14px;
+  padding:10px 0;border-top:1px solid var(--line)}
+.row small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.row input[type=number]{width:72px;font:500 15px var(--f-mono);padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--face);color:var(--ink)}
+.row input[type=checkbox]{width:22px;height:22px;accent-color:var(--brass)}
+.note{font-size:12px;color:var(--muted);line-height:1.7}
+@media (prefers-reduced-motion:reduce){#rose{transition:none!important}}
+</style>
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}</style>
+</head>
+<body>
+
+
+<div class="readout" aria-live="polite">
+  <div class="dir" id="dir">北東</div>
+  <div class="deg" id="deg">037°</div>
+</div>
+<div class="mode" id="mode"><b>デモ</b>　文字盤をドラッグして回せます</div>
+
+<div class="dialwrap" id="dialwrap">
+  <div class="lubber" aria-hidden="true"></div>
+  <svg viewBox="-200 -200 400 400" role="img" aria-label="コンパスの文字盤">
+    <circle r="196" fill="var(--face)" stroke="var(--line)" stroke-width="2"></circle>
+    <g id="rose" style="transition:transform .12s linear"></g>
+    <g id="needle">
+      <polygon points="0,-120 11,0 -11,0" fill="var(--north)"></polygon>
+      <polygon points="0,120 11,0 -11,0" fill="var(--muted)"></polygon>
+      <circle r="7" fill="var(--brass)"></circle>
+    </g>
+  </svg>
+</div>
+
+<div class="controls">
+  <button id="start" type="button">センサーで方位を測る</button>
+  <label class="row" for="truenorth">
+    <span>真北に補正する<small>磁北は真北より西にずれています</small></span>
+    <input id="truenorth" type="checkbox" checked>
+  </label>
+  <label class="row" for="decl">
+    <span>偏角（西偏・度）<small>米子周辺は約 8.3°</small></span>
+    <input id="decl" type="number" step="0.1" value="8.3" inputmode="decimal">
+  </label>
+  <p class="note">スマホの方位センサーを使います。iPhone は「センサーで方位を測る」を押すと許可を求められます。金属や磁石の近くでは針が狂うので、端末を水平に持って 8 の字に振ると補正されます。</p>
+</div>
+
+<script>
+const NAMES=["北","北北東","北東","東北東","東","東南東","南東","南南東","南","南南西","南西","西南西","西","西北西","北西","北北西"];
+const rose=document.getElementById("rose"), $dir=document.getElementById("dir"),
+  $deg=document.getElementById("deg"), $mode=document.getElementById("mode"),
+  $tn=document.getElementById("truenorth"), $decl=document.getElementById("decl");
+const NS="http://www.w3.org/2000/svg";
+function el(t,a,txt){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);if(txt)e.textContent=txt;return e}
+
+// build dial: ticks every 2°, labels every 30°, kanji cardinals
+for(let d=0;d<360;d+=2){
+  const major=d%10===0, r1=major?168:178, rad=(d-90)*Math.PI/180;
+  rose.appendChild(el("line",{x1:Math.cos(rad)*r1,y1:Math.sin(rad)*r1,x2:Math.cos(rad)*190,y2:Math.sin(rad)*190,
+    stroke:d===0?"var(--north)":"var(--muted)","stroke-width":major?2:1}));
+}
+for(let d=0;d<360;d+=30){ if(d%90===0)continue;
+  const t=el("text",{x:0,y:-148,"text-anchor":"middle","dominant-baseline":"middle",fill:"var(--muted)",
+    "font-family":"IBM Plex Mono, monospace","font-size":13,transform:`rotate(${d})`},String(d));
+  rose.appendChild(t);
+}
+[["北",0,"var(--north)"],["東",90,"var(--ink)"],["南",180,"var(--ink)"],["西",270,"var(--ink)"]].forEach(([k,d,c])=>{
+  rose.appendChild(el("text",{x:0,y:-140,"text-anchor":"middle","dominant-baseline":"middle",fill:c,
+    "font-family":"Shippori Mincho, serif","font-weight":800,"font-size":30,transform:`rotate(${d})`},k));
+});
+[45,135,225,315].forEach((d,i)=>{
+  rose.appendChild(el("text",{x:0,y:-112,"text-anchor":"middle","dominant-baseline":"middle",fill:"var(--brass)",
+    "font-family":"Shippori Mincho, serif","font-weight":600,"font-size":15,transform:`rotate(${d})`},["北東","南東","南西","北西"][i]));
+});
+
+let magHeading=37, live=false, shown=null;
+function decl(){const v=parseFloat($decl.value);return isFinite(v)?v:0}
+function render(){
+  let h=magHeading-( $tn.checked?decl():0 );   // 西偏: true = magnetic − W declination
+  h=((h%360)+360)%360;
+  // rotate rose the short way to avoid spinning through 360
+  if(shown===null)shown=h; else{let diff=((h-shown+540)%360)-180; shown+=diff;}
+  rose.style.transform=`rotate(${-shown}deg)`;
+  $deg.textContent=String(Math.round(h)%360).padStart(3,"0")+"°";
+  $dir.textContent=NAMES[Math.round(h/22.5)%16];
+}
+render();
+$tn.addEventListener("change",render); $decl.addEventListener("input",render);
+
+// sensor
+let gotData=false;
+function onAbs(e){ if(e.alpha==null)return; gotData=true; live=true; magHeading=(360-e.alpha)%360; render(); }
+function onIOS(e){ if(e.webkitCompassHeading==null)return; gotData=true; live=true; magHeading=e.webkitCompassHeading; render(); }
+async function start(){
+  $mode.textContent="センサーに接続しています…";
+  try{
+    if(typeof DeviceOrientationEvent!=="undefined" && typeof DeviceOrientationEvent.requestPermission==="function"){
+      const r=await DeviceOrientationEvent.requestPermission();
+      if(r!=="granted")throw new Error("denied");
+    }
+    if("ondeviceorientationabsolute" in window) window.addEventListener("deviceorientationabsolute",onAbs);
+    window.addEventListener("deviceorientation",onIOS);
+  }catch(err){ fail(); return; }
+  setTimeout(()=>{ if(gotData){$mode.innerHTML="<b>計測中</b>　端末の上端が向いている方位";} else fail(); },1500);
+}
+function fail(){ live=false; $mode.innerHTML="<b>センサーが使えません</b>　この画面ではデモ表示です"; }
+document.getElementById("start").addEventListener("click",start);
+
+// demo drag
+const wrap=document.getElementById("dialwrap"); let drag=null;
+function ang(e){const r=wrap.getBoundingClientRect();return Math.atan2(e.clientY-(r.top+r.height/2),e.clientX-(r.left+r.width/2))*180/Math.PI}
+wrap.addEventListener("pointerdown",e=>{ if(live)return; drag={a:ang(e),h:magHeading}; wrap.setPointerCapture(e.pointerId); });
+wrap.addEventListener("pointermove",e=>{ if(!drag)return; magHeading=((drag.h-(ang(e)-drag.a))%360+360)%360; render(); });
+wrap.addEventListener("pointerup",()=>drag=null); wrap.addEventListener("pointercancel",()=>drag=null);
+
+</script>
+
+</body>
+</html>
